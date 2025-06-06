@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NURVEK Central Interface :: Vehicle Arm</title>
+    <link href="https://fonts.googleapis.com/css2?family=Roboto+Mono:wght@300;400;500&family=Orbitron:wght@400;500;700&family=Inter:wght@300;400;500;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+    <div id="nurvek-interface-container">
+        <header id="system-header">
+            <div class="header-left">
+                <span class="system-logo">[NVK_SYS]</span>
+                <span class="system-title">NURVEK VEHICLE SURVEILLANCE ARM</span>
+            </div>
+            <div class="header-right">
+                <span id="system-time" class="status-text"></span>
+                <span class="status-indicator status-operational">OPERATIONAL</span>
+            </div>
+        </header>
+
+        <main id="main-content-grid">
+            <section id="left-column" class="info-panel">
+                <h2 class="panel-title">SYSTEM ANALYSIS</h2>
+                <div id="asset-monitor-content" class="panel-content-area">
+                    <div class="tab-nav">
+                        <button class="tab-button active" data-tab="vision-ai-log-content">Vision AI Log</button>
+                        <button class="tab-button" data-tab="panopticon-chat-content">Panopticon Chat</button>
+                        <button class="tab-button" data-tab="live-ocr-stream-content">Live OCR Stream</button>
+                        <button class="tab-button" data-tab="backend-monitor-content">Backend Monitor</button>
+                    </div>
+                    <div class="tab-content-container">
+                        <div id="vision-ai-log-content" class="tab-pane active">
+                            <p class="placeholder-text">Awaiting analysis tasks...</p>
+                            <!-- Vision AI raw output will be displayed here -->
+                        </div>
+                        <div id="panopticon-chat-content" class="tab-pane">
+                            <div id="chatbot-history" class="chatbot-messages-area">
+                                <!-- Chat messages will appear here -->
+                                <p class="placeholder-text">PANOPTICON AI INTERFACE :: AWAITING DIRECTIVE...</p>
+                            </div>
+                            <div class="chatbot-input-area">
+                                <textarea id="chatbot-input" placeholder="Query Panopticon Archives (Access Level 7)..." rows="3"></textarea>
+                                <button id="chatbot-send-button">TRANSMIT QUERY</button>
+                            </div>
+                        </div>
+                        <div id="live-ocr-stream-content" class="tab-pane">
+                            <p class="panel-subtitle">RAW VISION OCR STREAM (GEMMA 3:4B)</p>
+                            <div id="live-ocr-stream-box" class="live-stream-data-box">
+                                <p class="placeholder-text">Awaiting live OCR stream data...</p>
+                            </div>
+                        </div>
+                        <div id="backend-monitor-content" class="tab-pane">
+                            <p class="panel-subtitle">REAL-TIME BACKEND STATUS</p>
+                            <div id="backend-status-box" class="live-stream-data-box">
+                                <p class="placeholder-text">Awaiting backend status updates...</p>
+                            </div>
+                            <!-- Add toggle buttons here later for specific views -->
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <section id="center-column" class="core-status-panel">
+                <h2 class="panel-title">NURVEK CORE DIRECTIVE</h2>
+                <div id="core-status-content" class="panel-content-area">
+                    <div class="ai-eye-area">
+                        <div id="ai-thinking-bubble" class="ai-bubble">ANALYZING...</div>
+                        <div class="ai-presence-indicator"></div>
+                    </div>
+                    <p id="core-directive-text">MAINTAINING OPTIMAL SURVEILLANCE EFFICIENCY</p>
+                    <div class="live-feed-wrapper">
+                        <img id="live-feed-image" src="" alt="Live Feed Unavailable" class="live-feed-display">
+                        <svg id="live-feed-overlay" class="live-feed-svg-overlay"></svg>
+                    </div>
+                    <!-- Future: Abstract AI visualization, key metrics -->
+                </div>
+            </section>
+
+            <section id="right-column" class="info-panel">
+                <h2 class="panel-title">CONFIRMED EVENT LOG :: ARCHIVE <span id="log-count">(0)</span></h2>
+                <div id="event-log" class="panel-content-area">
+                    <p class="placeholder-text">Awaiting confirmed event data...</p>
+                    <!-- Event cards will be inserted here by app.js -->
+                </div>
+            </section>
+        </main>
+
+        <footer id="system-footer">
+            <p>NURVEK SYSTEMS // PROTOCOL 7 CLEARANCE // ALL ACTIVITY LOGGED // SESSION: <span id="session-id-footer"></span></p>
+        </footer>
+    </div>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/animejs/3.2.1/anime.min.js"></script>
+    <script src="js/app.js"></script>
+</body>
+</html>

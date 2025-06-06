@@ -1,0 +1,11 @@
+build
+# Ignore Python cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+data/lp_yolo_dataset_for_training
+data/lplates_yolo_labels_converted
+.venv
+src/nurvek_vehicle.egg-info
+nurvek_detections.db

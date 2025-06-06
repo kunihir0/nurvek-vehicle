@@ -1,0 +1,29 @@
+[project]
+name = "nurvek-vehicle" # This is the overall project name, can differ from <main_package_name>
+version = "0.1.0"
+description = "Vehicle tracking arm for the Nurvek AI system."
+requires-python = ">=3.9"
+dependencies = [
+    "ultralytics",
+    "opencv-python",
+    "transformers",
+    "Pillow",
+    "torch", # YOLOS from transformers is PyTorch-based
+    "requests", # For Hugging Face model example, though we'll use local images
+    # "easyocr", # Removed as OCR is now handled by vision model
+    "realesrgan", # For AI upscaling
+    "pyyaml", # For train_lp_detector.py
+    "fastapi",
+    "uvicorn[standard]", # For running the FastAPI server
+    "pydantic",
+    "sse-starlette", # For Server-Sent Events with FastAPI
+    "qdrant-client",
+    "sentence-transformers"
+]
+
+[project.optional-dependencies]
+dev = []
+
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"

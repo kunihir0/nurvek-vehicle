@@ -1,0 +1,32 @@
+# Ignore virtual environment
+    .venv/
+    venv/
+
+    # Ignore data directories (will be volume mounted)
+    data/
+    
+    # Ignore Git directory
+    .git/
+    .gitignore
+
+    # Ignore Python cache
+    __pycache__/
+    *.pyc
+    *.pyo
+    *.pyd
+
+    # Ignore other common large files or build artifacts if any
+    # e.g., *.mp4, *.webm if they are not directly needed in the image build itself
+    # For now, focusing on the main data directory.
+    # If you have very large model files in src/models that are not the base model,
+    # you might consider ignoring them too if they are not used by train_lp_detector.py directly.
+    # However, src/models/yolo/yolo11n.pt IS needed.
+
+    # Ignore Dockerfile itself and other Docker-related files if any
+    Dockerfile
+    docker-compose.yml
+
+    # Ignore specific large files if they are in the root or other copied dirs
+    # Example:
+    # large_video_file.mp4
+    # another_large_dataset.zip
