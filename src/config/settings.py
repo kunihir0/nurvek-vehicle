@@ -2,7 +2,7 @@
 
 # File/Path Settings
 VEHICLE_MODEL_NAME: str = "yolo11n.pt"
-LP_MODEL_PATH_REL: str = "data/lp_yolo_dataset_for_training/train_lp_run_amd/weights/best.pt"
+LP_MODEL_PATH_REL: str = "data/lp_yolo_dataset_for_training/train_lp_run/weights/best.pt"
 VIDEO_SOURCE_REL: str = "data/input_videos/sample_003.mp4" # Or use 0 for webcam
 DB_NAME: str = "nurvek_detections.db"
 CAMERA_ID: str = "CAM_DEV_01" # Default camera ID for this instance

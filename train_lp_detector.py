@@ -6,6 +6,8 @@ import shutil
 import yaml
 from ultralytics import YOLO
 import torch
+import argparse
+import sys
 
 # --- Configuration ---
 BASE_MODEL_PATH = "src/models/yolo/yolo11n.pt"  # Pretrained nano model
@@ -13,7 +15,7 @@ IMAGES_INPUT_DIR = "data/lplates_imgs"
 XML_ANNOTATIONS_INPUT_DIR = "data/lplates_annotations"
 
 # Intermediate and final dataset directories
-YOLO_LABELS_CONVERTED_DIR = "data/lplates_yolo_labels_converted"  # For YOLO format labels from XML
+YOLO_LABELS_CONVERTED_DIR = "data/lplates_yolo_labels_converted"
 FINAL_DATASET_BASE_DIR = "data/lp_yolo_dataset_for_training"
 TRAIN_IMAGES_DIR = os.path.join(FINAL_DATASET_BASE_DIR, "images", "train")
 VAL_IMAGES_DIR = os.path.join(FINAL_DATASET_BASE_DIR, "images", "val")
@@ -22,21 +24,34 @@ VAL_LABELS_DIR = os.path.join(FINAL_DATASET_BASE_DIR, "labels", "val")
 DATA_YAML_PATH = os.path.join(FINAL_DATASET_BASE_DIR, "lp_data.yaml")
 
 # Dataset parameters
-CLASS_NAME_IN_XML = "licence" # Corrected based on Cars6.xml
+CLASS_NAME_IN_XML = "licence"
 LICENSE_PLATE_CLASS_ID = 0
-VAL_SPLIT_SIZE = 0.2  # 20% for validation
+VAL_SPLIT_SIZE = 0.2
 
 # Training parameters
-TRAINING_EPOCHS = 100 # Increased for longer training
-IMAGE_SIZE = 640      # Increased image size due to more VRAM
-BATCH_SIZE = 32       # Increased batch size due to more VRAM
-WORKERS = 2           # Increased workers
-PATIENCE = 20         # Increased patience for early stopping
+TRAINING_EPOCHS = 55
+IMAGE_SIZE = 640
+BATCH_SIZE = 8
+WORKERS = 12
+PATIENCE = 20
+
+# --- MODIFIED: Added Colors class for better terminal output ---
+class Colors:
+    """ANSI color codes for terminal output."""
+    HEADER = '\033[95m'
+    OKBLUE = '\033[94m'
+    OKCYAN = '\033[96m'
+    OKGREEN = '\033[92m'
+    WARNING = '\033[93m'
+    FAIL = '\033[91m'
+    ENDC = '\033[0m'
+    BOLD = '\033[1m'
+    UNDERLINE = '\033[4m'
 
 # --- Helper Functions ---
 
 def convert_coordinates(size, box):
-    """Converts (xmin, xmax, ymin, ymax) box to YOLO format (x_center, y_center, width, height) normalized."""
+    """Converts (xmin, xmax, ymin, ymax) box to YOLO format."""
     dw = 1.0 / size[0]
     dh = 1.0 / size[1]
     x = (box[0] + box[1]) / 2.0
@@ -56,7 +71,7 @@ def convert_xml_annotations_to_yolo(xml_dir, yolo_labels_dir, class_name_in_xml,
     
     xml_files = glob.glob(os.path.join(xml_dir, "*.xml"))
     if not xml_files:
-        print(f"Warning: No XML files found in {xml_dir}")
+        print(f"{Colors.WARNING}Warning: No XML files found in {xml_dir}{Colors.ENDC}")
         return
 
     converted_count = 0
@@ -84,8 +99,6 @@ def convert_xml_annotations_to_yolo(xml_dir, yolo_labels_dir, class_name_in_xml,
                         xmax = float(bndbox_node.getElementsByTagName('xmax')[0].firstChild.data)
                         ymax = float(bndbox_node.getElementsByTagName('ymax')[0].firstChild.data)
                         
-                        # XML format is often (xmin, ymin, xmax, ymax)
-                        # convert_coordinates expects (xmin, xmax, ymin, ymax)
                         b = (xmin, xmax, ymin, ymax) 
                         bb = convert_coordinates((width, height), b)
                         
@@ -94,11 +107,9 @@ def convert_xml_annotations_to_yolo(xml_dir, yolo_labels_dir, class_name_in_xml,
                 
                 if found_objects_in_file:
                     converted_count +=1
-                # else:
-                    # print(f"Note: No objects of class '{class_name_in_xml}' found in {fname}, or file was empty.")
 
         except Exception as e:
-            print(f"Error processing {fname}: {e}")
+            print(f"{Colors.FAIL}Error processing {fname}: {e}{Colors.ENDC}")
     print(f"XML to YOLO conversion finished. {converted_count} files with '{class_name_in_xml}' objects processed.")
 
 def create_yolo_dataset_directories(base_dir, train_img_dir, val_img_dir, train_lbl_dir, val_lbl_dir):
@@ -107,7 +118,6 @@ def create_yolo_dataset_directories(base_dir, train_img_dir, val_img_dir, train_
     paths_to_create = [base_dir, train_img_dir, val_img_dir, train_lbl_dir, val_lbl_dir]
     for path in paths_to_create:
         os.makedirs(path, exist_ok=True)
-        # print(f"Ensured directory exists: {path}")
     print("Dataset directories created/ensured.")
 
 def split_source_to_train_val(source_images_dir, source_yolo_labels_dir,
@@ -123,7 +133,7 @@ def split_source_to_train_val(source_images_dir, source_yolo_labels_dir,
         all_image_files.extend(glob.glob(os.path.join(source_images_dir, ext)))
 
     if not all_image_files:
-        print(f"Error: No images found in {source_images_dir}. Please check the path and image extensions.")
+        print(f"{Colors.FAIL}Error: No images found in {source_images_dir}. Please check the path.{Colors.ENDC}")
         return
 
     random.shuffle(all_image_files)
@@ -144,7 +154,7 @@ def split_source_to_train_val(source_images_dir, source_yolo_labels_dir,
                 shutil.copy2(source_label_path, os.path.join(lbl_dest_folder, label_filename))
                 copied_count += 1
             else:
-                print(f"Warning: Label file not found for image {img_path} (expected at {source_label_path}). Skipping this image.")
+                print(f"{Colors.WARNING}Warning: Label file not found for image {img_path}. Skipping.{Colors.ENDC}")
         print(f"Copied {copied_count} images and labels to {set_name} set.")
 
     print(f"Total images: {len(all_image_files)}, Training: {len(train_files)}, Validation: {len(val_files)}")
@@ -152,26 +162,17 @@ def split_source_to_train_val(source_images_dir, source_yolo_labels_dir,
     copy_files(val_files, val_images_dest, val_labels_dest, "validation")
     print("Dataset splitting finished.")
 
-def generate_data_yaml_file(yaml_file_path, abs_path_to_train_images, abs_path_to_val_images, class_id, class_name_str):
+def generate_data_yaml_file(yaml_file_path, base_path, train_images_rel, val_images_rel, class_id, class_name_str):
     """Generates the data.yaml file for YOLO training."""
     print(f"Generating data YAML file at '{yaml_file_path}'...")
     
-    # Ultralytics prefers absolute paths or paths relative to the yolov5/yolov8 directory if run from there.
-    # For simplicity and clarity when running this script from project root, we use absolute paths.
     data_config = {
-        'path': os.path.abspath(os.path.dirname(yaml_file_path)), # dataset root dir
-        'train': os.path.abspath(abs_path_to_train_images),       # train images (relative to 'path')
-        'val': os.path.abspath(abs_path_to_val_images),           # val images (relative to 'path')
-        'nc': 1,                                                 # number of classes
-        'names': {class_id: class_name_str}                      # class names
+        'path': os.path.abspath(base_path),
+        'train': train_images_rel, # 'images/train'
+        'val': val_images_rel,     # 'images/val'
+        'nc': 1,
+        'names': {class_id: class_name_str}
     }
-    
-    # Adjust train/val paths to be relative to the 'path' key if Ultralytics expects that
-    # For current Ultralytics versions, absolute paths in train/val are fine.
-    # If issues arise, they can be made relative:
-    # data_config['train'] = os.path.relpath(abs_path_to_train_images, data_config['path'])
-    # data_config['val'] = os.path.relpath(abs_path_to_val_images, data_config['path'])
-
 
     with open(yaml_file_path, 'w') as f:
         yaml.dump(data_config, f, sort_keys=False, default_flow_style=None)
@@ -183,75 +184,77 @@ def generate_data_yaml_file(yaml_file_path, abs_path_to_train_images, abs_path_t
 if __name__ == "__main__":
     print("--- Starting License Plate Detector Training Pipeline ---")
 
-    # 1. Create dataset directories
+    # Pipeline steps 1-3
     create_yolo_dataset_directories(FINAL_DATASET_BASE_DIR, TRAIN_IMAGES_DIR, VAL_IMAGES_DIR, TRAIN_LABELS_DIR, VAL_LABELS_DIR)
-
-    # 2. Convert XML annotations to YOLO format
     convert_xml_annotations_to_yolo(XML_ANNOTATIONS_INPUT_DIR, YOLO_LABELS_CONVERTED_DIR, CLASS_NAME_IN_XML, LICENSE_PLATE_CLASS_ID)
-
-    # 3. Split dataset into train/val
     split_source_to_train_val(IMAGES_INPUT_DIR, YOLO_LABELS_CONVERTED_DIR,
                               TRAIN_IMAGES_DIR, VAL_IMAGES_DIR,
                               TRAIN_LABELS_DIR, VAL_LABELS_DIR,
                               VAL_SPLIT_SIZE)
-
-    # 4. Create data.yaml
-    # Note: YOLOv8 typically expects train/val paths in data.yaml to be relative to the dataset root or absolute.
-    # We will provide absolute paths for clarity.
-    generate_data_yaml_file(DATA_YAML_PATH, 
-                            TRAIN_IMAGES_DIR, # Pass relative path, will be made absolute in function
-                            VAL_IMAGES_DIR,   # Pass relative path, will be made absolute in function
-                            LICENSE_PLATE_CLASS_ID, 
-                            CLASS_NAME_IN_XML) # Use the same name as in XML for consistency
+    
+    # 4. Create data.yaml with relative paths for better portability
+    train_rel_path = os.path.relpath(TRAIN_IMAGES_DIR, FINAL_DATASET_BASE_DIR)
+    val_rel_path = os.path.relpath(VAL_IMAGES_DIR, FINAL_DATASET_BASE_DIR)
+    generate_data_yaml_file(DATA_YAML_PATH, FINAL_DATASET_BASE_DIR, train_rel_path, val_rel_path, LICENSE_PLATE_CLASS_ID, CLASS_NAME_IN_XML)
 
     # 5. Train the model
-    print("--- Starting YOLO Model Training ---")
+    print("\n--- Starting YOLO Model Training ---")
     
-    # Check for AMD GPU (ROCm/HIP) first, then CUDA, then CPU
-    if hasattr(torch.version, 'hip') and torch.version.hip is not None and torch.cuda.is_available() and torch.cuda.device_count() > 0 and 'amdgpu' in torch.cuda.get_device_name(0).lower():
-        # This is a common way to check if ROCm is the backend for cuda.is_available()
-        # Or more directly, try to use 'hip'
-        try:
-            if torch.cuda.device_count() > 0: # ROCm might report AMD GPUs via cuda interface
-                 # Check if the first GPU is AMD
-                if 'amd' in torch.cuda.get_device_name(0).lower():
-                    device_arg = 'hip:0' # Or just 'hip' to let PyTorch pick
-                    print(f"Attempting to use AMD GPU via ROCm/HIP: {device_arg}")
-                else: # Fallback if first GPU is not AMD, but CUDA is available
-                    device_arg = 0
-                    print(f"First GPU is not AMD. Using CUDA GPU: {device_arg} ({torch.cuda.get_device_name(0)})")
-            else: # Should not happen if torch.cuda.is_available is true
-                device_arg = 'cpu'
-                print("ROCm/HIP check passed but no GPUs found via CUDA interface. Using CPU.")
-        except Exception as e_hip_check:
-            print(f"Error during ROCm/HIP device check, falling back: {e_hip_check}")
-            if torch.cuda.is_available(): # Fallback to CUDA if HIP check failed
-                device_arg = 0
-                print(f"Using CUDA GPU: 0 ({torch.cuda.get_device_name(0)})")
-            else:
-                device_arg = 'cpu'
-                print("No GPU available (ROCm/HIP or CUDA). Using CPU.")
+    parser = argparse.ArgumentParser(description="YOLOv8 License Plate Detector Training Script")
+    parser.add_argument('--device', type=str, default=None, help="Device to use for training, e.g., '0', '1', 'cpu'. Skips interactive selection.")
+    args = parser.parse_args()
 
-    elif torch.cuda.is_available(): # Standard CUDA check if ROCm not detected first
-        gpu_count = torch.cuda.device_count()
-        if gpu_count > 1:
-            device_arg = list(range(gpu_count))
-            print(f"Using {gpu_count} CUDA GPUs: {device_arg}")
+    device_arg = args.device
+
+    if device_arg is None:
+        # --- MODIFIED: Added environment diagnostics and graceful exit ---
+        print(f"\n{Colors.HEADER}--- Hardware-Detection ---{Colors.ENDC}")
+        # Check for AMD GPUs via ROCm/HIP
+        is_rocm_available = hasattr(torch.version, 'hip') and torch.version.hip is not None
+        if is_rocm_available:
+            print(f"{Colors.OKGREEN}ROCm/HIP backend detected. PyTorch should see AMD GPUs.{Colors.ENDC}")
+        
+        if torch.cuda.is_available():
+            print(f"{Colors.OKCYAN}--- Interactive GPU Selection ---{Colors.ENDC}")
+            gpu_count = torch.cuda.device_count()
+            print(f"{Colors.BOLD}Available Devices:{Colors.ENDC}")
+            for i in range(gpu_count):
+                print(f"  {Colors.OKGREEN}[{i}]{Colors.ENDC} {torch.cuda.get_device_name(i)}")
+            print(f"  {Colors.WARNING}[{gpu_count}]{Colors.ENDC} CPU")
+
+            try:
+                while True:
+                    try:
+                        choice_str = input(f"Enter your choice (0-{gpu_count}): ")
+                        if not choice_str:
+                            print(f"{Colors.FAIL}No selection made. Please enter a number.{Colors.ENDC}")
+                            continue
+                        choice = int(choice_str)
+                        if 0 <= choice < gpu_count:
+                            device_arg = str(choice)
+                            break
+                        elif choice == gpu_count:
+                            device_arg = 'cpu'
+                            break
+                        else:
+                            print(f"{Colors.FAIL}Invalid choice. Please select a number between 0 and {gpu_count}.{Colors.ENDC}")
+                    except ValueError:
+                        print(f"{Colors.FAIL}Invalid input. Please enter a number.{Colors.ENDC}")
+            except KeyboardInterrupt:
+                print(f"\n{Colors.WARNING}Operation cancelled by user. Exiting.{Colors.ENDC}")
+                sys.exit(0)
+            print(f"{Colors.OKCYAN}-----------------------------{Colors.ENDC}")
         else:
-            device_arg = 0
-            print(f"Using 1 CUDA GPU: 0 ({torch.cuda.get_device_name(0)})")
-    else:
-        device_arg = 'cpu'
-        print("No GPU available (neither ROCm/HIP nor CUDA). Using CPU for training.")
+            print(f"{Colors.WARNING}No CUDA/ROCm-enabled GPU found by PyTorch. Using CPU for training.{Colors.ENDC}")
+            device_arg = 'cpu'
     
-    print(f"Selected device for training: {device_arg}")
+    print(f"\n{Colors.OKGREEN}Selected device for training: {device_arg}{Colors.ENDC}")
 
     try:
-        model = YOLO(BASE_MODEL_PATH)  # Load pretrained yolo11n.pt
+        model = YOLO(BASE_MODEL_PATH)
         
-        # Check if DATA_YAML_PATH exists before training
         if not os.path.exists(DATA_YAML_PATH):
-            print(f"ERROR: Data YAML file not found at {DATA_YAML_PATH}. Aborting training.")
+            print(f"{Colors.FAIL}ERROR: Data YAML file not found at {DATA_YAML_PATH}. Aborting training.{Colors.ENDC}")
         else:
             print(f"Training with data configuration: {DATA_YAML_PATH}")
             print(f"Using base model: {BASE_MODEL_PATH}")
@@ -263,19 +266,19 @@ if __name__ == "__main__":
                 imgsz=IMAGE_SIZE,
                 batch=BATCH_SIZE,
                 workers=WORKERS,
-                device=device_arg, # PyTorch should auto-detect ROCm GPU if env var is set
+                device=device_arg,
                 patience=PATIENCE,
-                augment=True, # Explicitly enable augmentations
-                amp=False,  # Explicitly disable Automatic Mixed Precision
-                project=FINAL_DATASET_BASE_DIR, # Saves results under FINAL_DATASET_BASE_DIR/
-                name='train_lp_run_amd',      # New run name for AMD training
-                exist_ok=True                 # Allow overwriting if 'train_lp_run_amd' exists
+                augment=True,
+                amp=True,
+                project=FINAL_DATASET_BASE_DIR,
+                name='train_lp_run',
+                exist_ok=True
             )
-            print("--- YOLO Model Training Finished ---")
-            print(f"Training results saved in: {os.path.join(FINAL_DATASET_BASE_DIR, 'train_lp_run')}")
-            print(f"Best model saved as: {os.path.join(FINAL_DATASET_BASE_DIR, 'train_lp_run', 'weights', 'best.pt')}")
+            print(f"\n{Colors.OKGREEN}--- YOLO Model Training Finished ---{Colors.ENDC}")
+            print(f"Training results saved in: {results.save_dir}")
+            print(f"Best model saved as: {os.path.join(results.save_dir, 'weights', 'best.pt')}")
 
     except Exception as e:
-        print(f"An error occurred during training: {e}")
+        print(f"\n{Colors.FAIL}An error occurred during training: {e}{Colors.ENDC}")
 
-    print("--- License Plate Detector Training Pipeline Complete ---")
+    print(f"\n{Colors.HEADER}--- License Plate Detector Training Pipeline Complete ---{Colors.ENDC}")

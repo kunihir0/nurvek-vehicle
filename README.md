@@ -27,7 +27,7 @@ uv pip install .
 
 ### License Plate Model Training
 ```bash
-docker build -t nurvek-lp-trainer .
+python train_lp_detector.py
 ```
 
 ### Run the System
