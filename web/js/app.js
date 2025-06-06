@@ -25,11 +25,11 @@ document.addEventListener('DOMContentLoaded', () => {
     const chatbotInputElement = document.getElementById('chatbot-input');
     const chatbotSendButtonElement = document.getElementById('chatbot-send-button');
 
-    // --- Live OCR Stream Elements ---
-    const liveOcrStreamBoxElement = document.getElementById('live-ocr-stream-box');
-    const apiOcrStreamFeedUrl = 'http://localhost:1242/api/v1/ocr_stream_feed';
-    let liveOcrStreamContent = ""; 
-    let currentOcrStreamSource = null; 
+    // --- Live OCR Stream Elements (REMOVED as EasyOCR is now used directly in backend) ---
+    // const liveOcrStreamBoxElement = document.getElementById('live-ocr-stream-box');
+    // const apiOcrStreamFeedUrl = 'http://localhost:1242/api/v1/ocr_stream_feed';
+    // let liveOcrStreamContent = "";
+    // let currentOcrStreamSource = null;
 
     // --- Backend Status Stream Elements ---
     const backendStatusBoxElement = document.getElementById('backend-status-box');
@@ -55,7 +55,8 @@ Do NOT include any other text, explanation, or markdown formatting before or aft
 The available tools are:
 - getTrackDetailsFromAPI(track_id: int): Fetches all recorded event details for a given vehicle track ID.
 - getLpHistoryFromAPI(lp_text: str): Fetches all event details for a given license plate text.
-- getRecentEventsFromAPI(limit: int = 10): Fetches the most recent N confirmed vehicle events.
+- getRecentEventsFromAPI(limit: int = 10): Fetches the most recent N confirmed vehicle events. Use this for general requests for recent activity if no specific search criteria are given.
+- semanticSearchEventsAPI(query_text: str, top_k: int = 5): Use this tool for searching events based on descriptions, characteristics, or concepts (e.g., "events involving a car", "red trucks near the warehouse", "suspicious activity at night", "find vehicles similar to..."). It performs a semantic search based on the meaning of the query_text and returns the top_k most relevant events. This is different from looking up specific IDs or just getting the latest events.
 
 After you request a tool, I will execute it and provide the output in a 'tool_output' block. Use that output to formulate your final response to the user. If the user's query doesn't require data retrieval, answer directly.`;
 
@@ -68,7 +69,7 @@ After you request a tool, I will execute it and provide the output in a 'tool_ou
     if (!aiThinkingBubbleElement) console.warn('[NVK_CONSOLE_JS] AI thinking bubble element not found! Vision analysis UI feedback disabled.'); else console.debug(`${DEBUG_PREFIX} AI thinking bubble element found.`);
     if (!visionAiLogContentElement) console.warn('[NVK_CONSOLE_JS] Vision AI log content element not found!'); else console.debug(`${DEBUG_PREFIX} Vision AI log content element found.`);
     if (!chatbotHistoryElement || !chatbotInputElement || !chatbotSendButtonElement) console.warn('[NVK_CONSOLE_JS] Chatbot interface elements not found!'); else console.debug(`${DEBUG_PREFIX} Chatbot interface elements found.`);
-    if (!liveOcrStreamBoxElement) console.warn('[NVK_CONSOLE_JS] Live OCR Stream Box element not found!'); else console.debug(`${DEBUG_PREFIX} Live OCR Stream Box element found.`);
+    // if (!liveOcrStreamBoxElement) console.warn('[NVK_CONSOLE_JS] Live OCR Stream Box element not found!'); else console.debug(`${DEBUG_PREFIX} Live OCR Stream Box element found.`); // Removed
     if (!backendStatusBoxElement) console.warn('[NVK_CONSOLE_JS] Backend Status Box element not found!'); else console.debug(`${DEBUG_PREFIX} Backend Status Box element found.`);
 
     if (sessionIdElement) {
@@ -112,6 +113,28 @@ After you request a tool, I will execute it and provide the output in a 'tool_ou
         } catch (error) {
             console.error(`${DEBUG_PREFIX} Fetch error in getTrackDetailsFromAPI:`, error);
             return { error: `Failed to fetch track details: ${error.message}` };
+        }
+    }
+
+    async function semanticSearchEventsAPI(query_text, top_k = 5) {
+        console.debug(`${DEBUG_PREFIX} JS Tool: semanticSearchEventsAPI called with query: "${query_text}", top_k: ${top_k}`);
+        try {
+            const response = await fetch(`http://localhost:1242/api/v1/events/semantic_search`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ query_text: query_text, top_k: top_k })
+            });
+            if (!response.ok) {
+                const errorData = await response.json().catch(() => ({ detail: response.statusText }));
+                console.error(`${DEBUG_PREFIX} API error in semanticSearchEventsAPI: ${response.status}`, errorData);
+                return { error: `API error: ${response.status} - ${errorData.detail || 'Unknown error'}` };
+            }
+            const data = await response.json();
+            console.debug(`${DEBUG_PREFIX} JS Tool: semanticSearchEventsAPI received:`, data);
+            return data.results && data.results.length > 0 ? data : { info: "No relevant events found for this query.", query_text: query_text };
+        } catch (error) {
+            console.error(`${DEBUG_PREFIX} Fetch error in semanticSearchEventsAPI:`, error);
+            return { error: `Failed to perform semantic search: ${error.message}` };
         }
     }
     // TODO: Implement getLpHistoryFromAPI and getRecentEventsFromAPI if needed, along with their FastAPI endpoints.
@@ -232,6 +255,10 @@ After you request a tool, I will execute it and provide the output in a 'tool_ou
                             actualArgs.lp_text = String(parsedArgs.param2);
                         } else if (actualToolName === "getRecentEventsFromAPI" && parsedArgs.param2 !== undefined) {
                             actualArgs.limit = parseInt(parsedArgs.param2, 10);
+                        } else if (actualToolName === "semanticSearchEventsAPI") {
+                            if (parsedArgs.param2 !== undefined) actualArgs.query_text = String(parsedArgs.param2);
+                            if (parsedArgs.param3 !== undefined) actualArgs.top_k = parseInt(parsedArgs.param3, 10);
+                            else actualArgs.top_k = 5; // Default if not provided
                         }
                         // Add more mappings if Gemma uses param3, param4 for other tools/args
                     } else { // Assume outerFuncName is the actual tool name
@@ -248,6 +275,8 @@ After you request a tool, I will execute it and provide the output in a 'tool_ou
                         toolOutput = { error: "getLpHistoryFromAPI tool not yet implemented in JS." }; // Placeholder
                     } else if (actualToolName === "getRecentEventsFromAPI") {
                         toolOutput = { error: "getRecentEventsFromAPI tool not yet implemented in JS." }; // Placeholder
+                    } else if (actualToolName === "semanticSearchEventsAPI" && actualArgs.query_text !== undefined) {
+                        toolOutput = await semanticSearchEventsAPI(actualArgs.query_text, actualArgs.top_k);
                     } else {
                         toolOutput = { error: `Unknown or improperly called tool: '${actualToolName}' with args ${JSON.stringify(actualArgs)}` };
                     }
@@ -382,78 +411,9 @@ After you request a tool, I will execute it and provide the output in a 'tool_ou
     }
     // --- End Chatbot Functions ---
 
-    // --- Live OCR Stream (SSE) Handler ---
-    function setupLiveOcrStream() {
-        // ... (same as before)
-        console.debug(`${DEBUG_PREFIX} Setting up Live OCR Stream (EventSource to ${apiOcrStreamFeedUrl})`);
-        if (!liveOcrStreamBoxElement) {
-            console.warn(`${DEBUG_PREFIX} Live OCR Stream Box element not found. SSE connection not started.`);
-            return;
-        }
-
-        const eventSource = new EventSource(apiOcrStreamFeedUrl);
-        liveOcrStreamBoxElement.innerHTML = '<p class="placeholder-text">Connecting to live OCR stream...</p>';
-        
-        eventSource.onopen = () => {
-            console.log(`${DEBUG_PREFIX} Live OCR Stream EventSource connected.`);
-            liveOcrStreamBoxElement.innerHTML = '<p class="placeholder-text">Awaiting live OCR stream data...</p>';
-            liveOcrStreamContent = ""; 
-            currentOcrStreamSource = null; 
-        };
-
-        eventSource.addEventListener('ocr_update', (event) => {
-            console.debug(`${DEBUG_PREFIX} SSE 'ocr_update' received:`, event.data);
-            try {
-                const eventData = JSON.parse(event.data); 
-                const ollamaChunkRaw = eventData.ocr_chunk; 
-                
-                let ollamaMessageContent = "";
-                try {
-                    const ollamaStreamObj = JSON.parse(ollamaChunkRaw); 
-                    if (ollamaStreamObj.message && ollamaStreamObj.message.content) {
-                        ollamaMessageContent = ollamaStreamObj.message.content;
-                    }
-                } catch (e) {
-                    console.warn(`${DEBUG_PREFIX} Could not parse ocr_chunk as Ollama stream object: ${ollamaChunkRaw}`, e);
-                    ollamaMessageContent = ollamaChunkRaw; 
-                }
-                
-                if (eventData.source && currentOcrStreamSource !== eventData.source) {
-                    if (eventData.final_chunk) { 
-                        liveOcrStreamContent = ""; 
-                        currentOcrStreamSource = null;
-                    } else if (currentOcrStreamSource === null) { 
-                         liveOcrStreamContent = "";
-                         currentOcrStreamSource = eventData.source || "unknown_source";
-                    }
-                } else if (eventData.final_chunk && liveOcrStreamContent.length > 0 && !liveOcrStreamContent.endsWith("\n--- OCR END ---\n")) {
-                } else if (!eventData.final_chunk && liveOcrStreamContent.endsWith("\n--- OCR END ---\n")) {
-                    liveOcrStreamContent = "";
-                }
-
-                liveOcrStreamContent += ollamaMessageContent;
-                liveOcrStreamBoxElement.textContent = liveOcrStreamContent;
-                liveOcrStreamBoxElement.scrollTop = liveOcrStreamBoxElement.scrollHeight;
-
-                if (eventData.final_chunk) { 
-                    liveOcrStreamContent += "\n--- OCR END ---\n";
-                    liveOcrStreamBoxElement.textContent = liveOcrStreamContent;
-                }
-
-            } catch (e) {
-                console.error(`${DEBUG_PREFIX} Error processing SSE ocr_update data:`, e, "Raw data:", event.data);
-                liveOcrStreamBoxElement.textContent = liveOcrStreamContent + "\n[STREAM ERROR]";
-            }
-        });
-
-        eventSource.onerror = (error) => {
-            console.error(`${DEBUG_PREFIX} Live OCR Stream EventSource error:`, error);
-            if (liveOcrStreamBoxElement) liveOcrStreamBoxElement.textContent = "Live OCR Stream DISCONNECTED. Check API server.";
-            eventSource.close();
-            setTimeout(setupLiveOcrStream, 5000);
-        };
-    }
-    if (liveOcrStreamBoxElement) setupLiveOcrStream();
+    // --- Live OCR Stream (SSE) Handler (REMOVED as EasyOCR is now used directly in backend) ---
+    // function setupLiveOcrStream() { ... }
+    // if (liveOcrStreamBoxElement) setupLiveOcrStream(); // Removed
     // --- End Live OCR Stream Handler ---
 
     // --- Backend Status Stream (SSE) Handler ---

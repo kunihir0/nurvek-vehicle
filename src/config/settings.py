@@ -3,7 +3,7 @@
 # File/Path Settings
 VEHICLE_MODEL_NAME: str = "yolo11n.pt"
 LP_MODEL_PATH_REL: str = "data/lp_yolo_dataset_for_training/train_lp_run/weights/best.pt"
-VIDEO_SOURCE_REL: str = "data/input_videos/sample_003.mp4" # Or use 0 for webcam
+VIDEO_SOURCE_REL: str = "data/input_videos/source_002.mp4" # Or use 0 for webcam
 DB_NAME: str = "nurvek_detections.db"
 CAMERA_ID: str = "CAM_DEV_01" # Default camera ID for this instance
 
@@ -20,15 +20,15 @@ VEHICLE_DETECTION_CONF_THRESHOLD: float = 0.7 # Confidence threshold for main ve
 LP_OCR_COOLDOWN_FRAMES: int = 1
 LP_CONFIDENCE_THRESHOLD: float = 0.65 # Min confidence for LP detection model
 VALID_LP_LENGTHS: list[int] = [6, 7, 8]
-# EASYOCR_LANGUAGES: list[str] = ['en'] # Removed
-# EASYOCR_ALLOWLIST: str = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789' # Removed
+EASYOCR_LANGUAGES: list[str] = ['en']
+EASYOCR_ALLOWLIST: str = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'
 PRE_INFERENCE_RESIZE_WIDTH: int = 1280 # Resize input frame to this width for vehicle detection; 0 to disable
 
-# Ollama Vision OCR Settings
-OLLAMA_API_BASE_URL: str = "http://0.0.0.0:11434/api/chat" # Or /api/generate if preferred for non-streaming
-VISION_OCR_MODEL_NAME: str = "gemma3:4b" # As specified by user
-VISION_OCR_PROMPT: str = "Extract the license plate characters from this image. Return only the alphanumeric characters. If no clear plate is visible or readable, return 'UNKNOWN_PLATE'."
-VISION_OCR_TIMEOUT_SECONDS: int = 10 # Timeout for the OCR request
+# Ollama Vision OCR Settings (No longer used for backend LP OCR)
+# OLLAMA_API_BASE_URL: str = "http://0.0.0.0:11434/api/chat"
+# VISION_OCR_MODEL_NAME: str = "gemma3:4b"
+# VISION_OCR_PROMPT: str = "Extract the license plate characters from this image. Return only the alphanumeric characters. If no clear plate is visible or readable, return 'UNKNOWN_PLATE'."
+# VISION_OCR_TIMEOUT_SECONDS: int = 10
 
 # Qdrant Settings
 QDRANT_HOST: str = "localhost" # Assuming Qdrant is running locally
@@ -57,4 +57,4 @@ TEXT_BG_COLOR: tuple[int, int, int] = (0, 0, 0)        # Black background for te
 TEXT_BG_ALPHA: float = 0.5                             # Semi-transparent background
 
 # Feature Toggles
-ENABLE_LP_PREPROCESSING: bool = False # Changed to False to send raw color crop to vision OCR
+ENABLE_LP_PREPROCESSING: bool = True # Re-enable for EasyOCR

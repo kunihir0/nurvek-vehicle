@@ -10,7 +10,7 @@ dependencies = [
     "Pillow",
     "torch", # YOLOS from transformers is PyTorch-based
     "requests", # For Hugging Face model example, though we'll use local images
-    # "easyocr", # Removed as OCR is now handled by vision model
+    "easyocr",
     "realesrgan", # For AI upscaling
     "pyyaml", # For train_lp_detector.py
     "fastapi",

@@ -5,7 +5,7 @@ import pathlib # Keep for potential future use, though settings might handle pat
 import torch
 import sqlite3 # Keep for type hints if db_conn/cursor are passed around
 import datetime
-# import easyocr # No longer needed for OCR reader instance
+import easyocr # Added back for EasyOCR
 import threading
 import queue
 import requests # For making HTTP requests to the API
@@ -18,6 +18,7 @@ from src.core.schemas import VehicleEvent, VehicleAttributes, LicensePlateData #
 from src.database.db_utils import flush_db_batch # init_db_connection will be called in main.py
 from src.utils.drawing import draw_text_with_background
 from src.core.ocr_utils import extract_license_plate_info_ocr
+from src.core.qdrant_sync import embed_and_store_event # Qdrant integration
 
 # --- Module-level globals for queues and stats ---
 ocr_task_queue = queue.Queue(maxsize=settings.MAX_OCR_TASK_QUEUE_SIZE)
@@ -43,12 +44,12 @@ def _post_backend_status(source: str, event_type: str, data: Dict[str, Any]):
 
 def ocr_worker_function(
     lp_model: Any,  # YOLO model instance
-    # ocr_reader: Any, # No longer needed
+    ocr_reader_instance: Optional[easyocr.Reader], # Added EasyOCR reader
     db_conn: sqlite3.Connection,
     db_cursor: sqlite3.Cursor,
     worker_stats_dict: dict
 ) -> None:
-    """Processes OCR tasks from a queue, including LP detection and OCR."""
+    """Processes OCR tasks from a queue, including LP detection and OCR using EasyOCR."""
     print("[WORKER_OCR] OCR Worker thread started.")
     pending_db_records_worker: List[Tuple[Any, ...]] = []
     while True:
@@ -67,9 +68,9 @@ def ocr_worker_function(
             
             _post_backend_status("ocr_worker", "processing_start", {"track_id": track_id_for_worker, "frame_num": frame_num_for_worker})
             # Pass the current state of ENABLE_LP_PREPROCESSING from this module
-            # ocr_reader argument removed from extract_license_plate_info_ocr
+
             lp_detected_flag, ocr_success_flag, ocr_text_result, lp_conf_result, lp_bbox_result, raw_ocr_text_for_console, final_lp_image_for_ocr = \
-                extract_license_plate_info_ocr(vehicle_crop, lp_model, ENABLE_LP_PREPROCESSING)
+                extract_license_plate_info_ocr(vehicle_crop, lp_model, ocr_reader_instance)
 
             lp_image_base64_worker: Optional[str] = None
             if final_lp_image_for_ocr is not None and final_lp_image_for_ocr.size > 0:
@@ -128,12 +129,12 @@ def run_main_pipeline(
     video_source_path: str, 
     vehicle_model: Any, 
     lp_model_instance: Optional[Any],
-    # ocr_reader_instance: Optional[Any], # No longer needed
+    ocr_reader_instance: Optional[easyocr.Reader], # Added EasyOCR reader
     db_conn: sqlite3.Connection,
     db_cursor: sqlite3.Cursor,
     worker_stats_ref: dict
 ) -> None:
-    global ENABLE_LP_PREPROCESSING 
+    global ENABLE_LP_PREPROCESSING
     gui_works = True
     window_name = "Nurvek PoC - Modular Pipeline"
     
@@ -193,7 +194,7 @@ def run_main_pipeline(
 
     ocr_thread = threading.Thread(
         target=ocr_worker_function,
-        args=(lp_model_instance, db_conn, db_cursor, worker_stats_ref), # ocr_reader_instance removed
+        args=(lp_model_instance, ocr_reader_instance, db_conn, db_cursor, worker_stats_ref),
         daemon=True
     )
     ocr_thread.start()
@@ -325,11 +326,19 @@ def run_main_pipeline(
                                                 response = requests.post(settings.API_ENDPOINT_URL, json=vehicle_event_data.model_dump(mode='json'))
                                                 if response.status_code == 200:
                                                     print(f"[API_CLIENT] Successfully sent event for Track ID {track_id_from_worker} to API.")
+                                                    # Store event in Qdrant
+                                                    try:
+                                                        embed_and_store_event(event=vehicle_event_data, sqlite_event_id=None)
+                                                        print(f"[QDRANT_CLIENT] Successfully stored event for Track ID {track_id_from_worker} in Qdrant.")
+                                                    except Exception as e_qdrant:
+                                                        print(f"[QDRANT_CLIENT_ERROR] Failed to store event for Track ID {track_id_from_worker} in Qdrant: {e_qdrant}")
                                                 else:
                                                     print(f"[API_CLIENT_ERROR] Failed to send event for Track ID {track_id_from_worker}. Status: {response.status_code}, Response: {response.text}")
                                             except requests.exceptions.RequestException as e_req:
                                                 print(f"[API_CLIENT_ERROR] Request failed for Track ID {track_id_from_worker}: {e_req}")
-                                            break 
+                                            except Exception as e_main_event_block: # Catch other potential errors in this block
+                                                print(f"[PIPELINE_ERROR] Error during event finalization/posting/Qdrant for Track ID {track_id_from_worker}: {e_main_event_block}")
+                                            break
                             
                             if not track_info['lp_confirmed']:
                                 current_num_attempts = len(track_info['lp_ocr_attempts'])

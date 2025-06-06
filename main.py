@@ -1,6 +1,6 @@
 import pathlib
 import torch # For torch.cuda.is_available()
-# import easyocr # No longer needed for OCR reader instance
+import easyocr # Added back for EasyOCR
 
 # Import settings and utility functions from their new locations
 from src.config import settings
@@ -9,7 +9,8 @@ from src.database.db_utils import init_db_connection
 # draw_text_with_background is used within pipeline.py (imported from src.utils.drawing)
 # preprocess_lp_for_ocr and extract_license_plate_info_ocr are used within pipeline.py (imported from src.core.ocr_utils)
 
-from src.core.pipeline import run_main_pipeline 
+from src.core.pipeline import run_main_pipeline
+from src.core.qdrant_sync import initialize_qdrant_resources # Import Qdrant initializer
 # Queues (ocr_task_queue, display_results_queue) are managed within pipeline.py
 # worker_stats is initialized here and passed, then managed by pipeline.py's worker
 # ENABLE_LP_PREPROCESSING is managed within pipeline.py (initialized from settings, toggled by keypress there)
@@ -40,17 +41,16 @@ if __name__ == "__main__":
     
     worker_stats_shared = {'lp_detections': 0, 'ocr_successes': 0, 'tasks_processed': 0}
 
-    # ocr_reader_instance = None # No longer needed
-    # if settings.EASYOCR_LANGUAGES:  # This block is removed
-    #     try:
-    #         print("[INFO] Initializing EasyOCR Reader...")
-    #         ocr_reader_instance = easyocr.Reader(settings.EASYOCR_LANGUAGES, gpu=torch.cuda.is_available())
-    #         print(f"[INFO] EasyOCR Reader initialized. Device: {ocr_reader_instance.device if hasattr(ocr_reader_instance, 'device') else 'CPU (default)'}")
-    #     except Exception as e_ocr_init:
-    #         print(f"[WARN] Failed to initialize EasyOCR Reader: {e_ocr_init}. OCR will be disabled if it was intended.")
-    # else:
-    #     print("[INFO] No languages specified for EasyOCR, OCR will be disabled.")
-    print("[INFO] OCR will be handled by the vision model via Ollama.")
+    ocr_reader_instance = None
+    if settings.EASYOCR_LANGUAGES:
+        try:
+            print("[INFO] Initializing EasyOCR Reader...")
+            ocr_reader_instance = easyocr.Reader(settings.EASYOCR_LANGUAGES, gpu=torch.cuda.is_available())
+            print(f"[INFO] EasyOCR Reader initialized. Device: {ocr_reader_instance.device if hasattr(ocr_reader_instance, 'device') else 'CPU (default)'}")
+        except Exception as e_ocr_init:
+            print(f"[WARN] Failed to initialize EasyOCR Reader: {e_ocr_init}. OCR will be disabled.")
+    else:
+        print("[INFO] No languages specified for EasyOCR, OCR will be disabled.")
 
     print(f"[INFO] Starting Full Pipeline (DB: {settings.DB_NAME})...")
     print(f"[INFO] Vehicle Model: {vehicle_model_fpath}")
@@ -89,17 +89,29 @@ if __name__ == "__main__":
         if db_connection: db_connection.close()
         exit()
     
+    # Initialize Qdrant resources before starting the pipeline
+    try:
+        print("[INFO] Initializing Qdrant resources...")
+        initialize_qdrant_resources()
+        print("[INFO] Qdrant resources initialized successfully.")
+    except Exception as e_qdrant_init:
+        print(f"[ERROR] Failed to initialize Qdrant resources: {e_qdrant_init}")
+        print("[INFO] Proceeding without Qdrant integration for this session.")
+        # Optionally, exit if Qdrant is critical:
+        # if db_connection: db_connection.close()
+        # exit()
+
     try:
         run_main_pipeline(
-            video_source_path=str(video_source_fpath_str), 
+            video_source_path=str(video_source_fpath_str),
             vehicle_model=vehicle_yolo_model,
             lp_model_instance=custom_lp_model,
-            # ocr_reader_instance=ocr_reader_instance, # Removed
+            ocr_reader_instance=ocr_reader_instance,
             db_conn=db_connection,
             db_cursor=db_curs,
             worker_stats_ref=worker_stats_shared
         )
-    except Exception as e_main: 
+    except Exception as e_main:
         print(f"[FATAL] Main execution error: {e_main}")
         import traceback
         traceback.print_exc()

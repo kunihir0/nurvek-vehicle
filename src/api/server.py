@@ -14,22 +14,38 @@ import uvicorn
 from typing import Dict, Any, List, Optional
 
 from src.core.schemas import VehicleEvent
+from src.config import settings
+from src.core.qdrant_sync import initialize_qdrant_resources
+# Import the globals directly to be used after initialization
+from src.core.qdrant_sync import qdrant_client as qdrant_sync_client
+from src.core.qdrant_sync import embedding_model as qdrant_sync_embedding_model
+
 
 # --- Global variable to store the latest live frame ---
 latest_live_frame_base64: Optional[str] = None
 # ---
 
-# --- SSE OCR Stream Globals ---
-# List to hold asyncio Queues, one for each connected SSE client for OCR stream
-ocr_stream_client_queues: List[asyncio.Queue] = []
+# --- SSE OCR Stream Globals (REMOVED as EasyOCR is now used directly in backend) ---
+# ocr_stream_client_queues: List[asyncio.Queue] = []
 backend_status_client_queues: List[asyncio.Queue] = [] # For general backend status
 # ---
 
 app = FastAPI(
     title="Nurvek Vehicle Arm API",
-    description="API for receiving vehicle detection and attribute events, and serving live feed and OCR streams.",
-    version="0.1.2" # Incremented version
+    description="API for receiving vehicle detection and attribute events, serving live feed, backend status streams, and semantic search.",
+    version="0.1.4" # Incremented version
 )
+
+@app.on_event("startup")
+async def startup_event():
+    print("[API_SERVER] Initializing Qdrant resources on startup...")
+    try:
+        initialize_qdrant_resources()
+        print("[API_SERVER] Qdrant resources initialized successfully.")
+    except Exception as e:
+        print(f"[API_SERVER_ERROR] Failed to initialize Qdrant resources on startup: {e}")
+        # Depending on severity, you might want to prevent app startup or handle gracefully
+        # For now, endpoints relying on Qdrant will fail if this doesn't succeed.
 
 # --- CORS Middleware Setup ---
 origins = [
@@ -126,63 +142,11 @@ async def get_live_feed_frame():
     """
     return latest_frame_and_detections
 
-# --- OCR Stream Endpoints ---
-class OcrChunkData(BaseModel):
-    ocr_chunk: str # This will be the raw JSON string line from Ollama
-    source: Optional[str] = None # e.g., "vision_ocr_stream"
-    final_chunk: Optional[bool] = False # To indicate the end of a full OCR attempt for an image
-
-@app.post("/api/v1/internal/ocr_stream_chunk", include_in_schema=False)
-async def post_ocr_stream_chunk(chunk_data: OcrChunkData):
-    """
-    Internal endpoint for the OCR worker to post raw stream chunks.
-    These chunks are then fanned out to connected SSE clients.
-    """
-    # print(f"[API_SERVER_OCR_CHUNK] Received OCR chunk: {chunk_data.ocr_chunk[:100]}...") # Can be verbose
-    for q in ocr_stream_client_queues:
-        await q.put(chunk_data.model_dump_json()) # Send the whole OcrChunkData as JSON string
-    return {"status": "success", "message": "OCR chunk received and queued for SSE"}
-
-async def ocr_event_generator(request: Request, client_queue: asyncio.Queue):
-    try:
-        while True:
-            # Check if client is still connected
-            if await request.is_disconnected():
-                print("[API_SERVER_SSE] OCR Stream client disconnected.")
-                break
-            
-            try:
-                # Wait for a new message from the queue
-                message = await asyncio.wait_for(client_queue.get(), timeout=1.0) 
-                # yield f"data: {message}\n\n" # message is already a JSON string
-                yield f"event: ocr_update\ndata: {message}\n\n"
-            except asyncio.TimeoutError:
-                # Send a keep-alive comment or heartbeat if needed, or just continue
-                yield ": keep-alive\n\n" 
-                continue
-    except asyncio.CancelledError:
-        print("[API_SERVER_SSE] OCR Stream generator cancelled (client likely disconnected).")
-    finally:
-        # Remove queue when client disconnects
-        if client_queue in ocr_stream_client_queues:
-            ocr_stream_client_queues.remove(client_queue)
-        print(f"[API_SERVER_SSE] OCR Stream client queue removed. Remaining clients: {len(ocr_stream_client_queues)}")
-
-
-@app.get("/api/v1/ocr_stream_feed", include_in_schema=False) # SSE endpoint for frontend
-async def ocr_stream_feed(request: Request):
-    """
-    Provides a Server-Sent Event stream for live OCR processing updates.
-    Frontend connects to this to get raw Ollama stream chunks.
-    """
-    client_queue = asyncio.Queue()
-    ocr_stream_client_queues.append(client_queue)
-    print(f"[API_SERVER_SSE] New OCR Stream client connected. Total clients: {len(ocr_stream_client_queues)}")
-    
-    # Use EventSourceResponse for proper SSE handling
-    # EventSourceResponse requires an async generator
-    # EventSourceResponse import moved to top
-    return EventSourceResponse(ocr_event_generator(request, client_queue), ping=15) # Added a ping interval
+# --- OCR Stream Endpoints (REMOVED as EasyOCR is now used directly in backend) ---
+# class OcrChunkData(BaseModel): ...
+# @app.post("/api/v1/internal/ocr_stream_chunk", include_in_schema=False) ...
+# async def ocr_event_generator(request: Request, client_queue: asyncio.Queue): ...
+# @app.get("/api/v1/ocr_stream_feed", include_in_schema=False) ...
 
 # --- Backend Status Stream Endpoints ---
 class BackendStatusUpdate(BaseModel):
@@ -223,6 +187,63 @@ async def backend_status_feed(request: Request):
     backend_status_client_queues.append(client_queue)
     print(f"[API_SERVER_SSE] New Backend Status client connected. Total: {len(backend_status_client_queues)}")
     return EventSourceResponse(backend_status_event_generator(request, client_queue), ping=15)
+
+# --- Semantic Search Endpoint ---
+class SemanticSearchQuery(BaseModel):
+    query_text: str
+    top_k: Optional[int] = Field(default=5, ge=1, le=50)
+
+class SemanticSearchResultItem(BaseModel):
+    id: str # Qdrant point ID
+    score: float
+    payload: Dict[str, Any] # The payload stored in Qdrant
+
+class SemanticSearchResults(BaseModel):
+    results: List[SemanticSearchResultItem]
+    query_text: str
+    count: int
+
+@app.post("/api/v1/events/semantic_search", response_model=SemanticSearchResults) # Changed to POST to accept body
+async def semantic_search_events(search_query: SemanticSearchQuery):
+    """
+    Performs semantic search over stored vehicle events using Qdrant.
+    """
+    if qdrant_sync_client is None or qdrant_sync_embedding_model is None:
+        print("[API_SERVER_ERROR] Qdrant client or embedding model not available for semantic search.")
+        raise HTTPException(status_code=503, detail="Semantic search service not available. Resources not initialized.")
+
+    try:
+        print(f"[API_SEMANTIC_SEARCH] Received query: '{search_query.query_text}', top_k: {search_query.top_k}")
+        query_vector = qdrant_sync_embedding_model.encode(search_query.query_text).tolist()
+
+        qdrant_search_results = qdrant_sync_client.search(
+            collection_name=settings.QDRANT_COLLECTION_NAME,
+            query_vector=query_vector,
+            limit=search_query.top_k,
+            with_payload=True  # Retrieve the payload
+        )
+        
+        formatted_results: List[SemanticSearchResultItem] = []
+        for hit in qdrant_search_results:
+            formatted_results.append(
+                SemanticSearchResultItem(
+                    id=str(hit.id), # Ensure ID is string
+                    score=hit.score,
+                    payload=hit.payload if hit.payload else {}
+                )
+            )
+        
+        print(f"[API_SEMANTIC_SEARCH] Found {len(formatted_results)} results for query: '{search_query.query_text}'")
+        return SemanticSearchResults(
+            results=formatted_results,
+            query_text=search_query.query_text,
+            count=len(formatted_results)
+        )
+
+    except Exception as e:
+        print(f"[API_SEMANTIC_SEARCH_ERROR] Error during semantic search for query '{search_query.query_text}': {e}")
+        raise HTTPException(status_code=500, detail=f"Error performing semantic search: {str(e)}")
+
 
 # --- Health Check ---
 @app.get("/health", include_in_schema=False)
