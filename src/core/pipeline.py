@@ -150,7 +150,9 @@ def run_main_pipeline(
     print(f"[INFO] Video source opened: {video_source_path} ({orig_w}x{orig_h})")
 
     vehicle_names = vehicle_model.model.names if hasattr(vehicle_model, 'model') else vehicle_model.names
-    active_filters: Dict[str, bool] = {}
+    # Initialize all known classes to be active by default
+    active_filters: Dict[str, bool] = {class_name: True for class_name in vehicle_names.values()}
+    
     filter_keys_map: Dict[int, str] = {}
     preferred_vehicle_classes: List[str] = ['car','motorcycle','truck','bicycle','bus']
     assignable_keys: List[int] = [ord(str(i)) for i in range(1,10)]
@@ -159,7 +161,7 @@ def run_main_pipeline(
 
     for p_cls in preferred_vehicle_classes:
         if p_cls in vehicle_names.values() and current_key_idx < len(assignable_keys):
-            active_filters[p_cls] = True
+            # active_filters[p_cls] = True # Already set to True by default initialization
             filter_keys_map[assignable_keys[current_key_idx]] = p_cls
             temp_assigned_classes.add(p_cls)
             current_key_idx += 1
@@ -167,7 +169,7 @@ def run_main_pipeline(
         other_classes = sorted(list(set(vehicle_names.values()) - temp_assigned_classes))
         for o_cls in other_classes:
             if current_key_idx < len(assignable_keys):
-                active_filters[o_cls] = True
+                # active_filters[o_cls] = True # Already set to True by default initialization
                 filter_keys_map[assignable_keys[current_key_idx]] = o_cls
                 current_key_idx +=1
             else: break
@@ -187,8 +189,13 @@ def run_main_pipeline(
     total_lp_ocr_tasks_queued: int = 0
     ocr_queue_full_count: int = 0
     unique_vehicle_track_ids: set[int] = set()
-    confirmed_lp_texts_set: set[str] = set() 
+    confirmed_lp_texts_set: set[str] = set()
     start_time_overall: float = time.time()
+
+    # State for live frame API sending
+    live_frame_api_available: bool = True
+    live_frame_connection_failures: int = 0
+    MAX_LIVE_FRAME_FAILURES: int = 3 # Max retries before disabling
     
     tracked_vehicle_data: Dict[int, Dict[str, Any]] = {}
 
@@ -485,7 +492,7 @@ def run_main_pipeline(
             if gui_works: 
                  draw_text_with_background(display_image, fps_text, (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, settings.FPS_TEXT_COLOR, settings.TEXT_BG_COLOR, thickness=2)
 
-            if frames_processed % settings.LIVE_FRAME_SEND_INTERVAL_MAIN_LOOPS == 0:
+            if live_frame_api_available and frames_processed % settings.LIVE_FRAME_SEND_INTERVAL_MAIN_LOOPS == 0:
                 if live_feed_frame is not None and live_feed_frame.size > 0:
                     try:
                         is_success_frame, buffer_frame = cv2.imencode(".jpg", live_feed_frame, [cv2.IMWRITE_JPEG_QUALITY, 70])
@@ -494,14 +501,20 @@ def run_main_pipeline(
                             
                             frame_payload = {
                                 "frame_base64": frame_b64_str,
-                                "detections": current_frame_detections_for_api 
+                                "detections": current_frame_detections_for_api
                             }
                             try:
                                 requests.post(settings.API_LIVE_FRAME_UPDATE_URL, json=frame_payload, timeout=0.2)
-                            except requests.exceptions.Timeout:
-                                print(f"[PIPELINE_WARN] Timeout sending live frame to API.")
+                                live_frame_connection_failures = 0 # Reset on success
+                            except (requests.exceptions.ConnectionError, requests.exceptions.Timeout) as e_connect:
+                                live_frame_connection_failures += 1
+                                print(f"[PIPELINE_WARN] Failed to send live frame to API (Attempt {live_frame_connection_failures}/{MAX_LIVE_FRAME_FAILURES}): {e_connect}")
+                                if live_frame_connection_failures >= MAX_LIVE_FRAME_FAILURES:
+                                    live_frame_api_available = False
+                                    print("[PIPELINE_ERROR] Max retries exceeded. Disabling live frame sending to API. Ensure API server is running.")
                             except requests.exceptions.RequestException as e_frame_req:
-                                print(f"[PIPELINE_WARN] Failed to send live frame to API: {e_frame_req}")
+                                # For other request exceptions, don't necessarily disable, but log
+                                print(f"[PIPELINE_WARN] Failed to send live frame to API due to other request error: {e_frame_req}")
                         else:
                             print("[PIPELINE_WARN] Failed to encode display_image for live feed API.")
                     except Exception as e_frame_encode:

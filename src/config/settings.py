@@ -3,7 +3,7 @@
 # File/Path Settings
 VEHICLE_MODEL_NAME: str = "yolo11n.pt"
 LP_MODEL_PATH_REL: str = "data/lp_yolo_dataset_for_training/train_lp_run/weights/best.pt"
-VIDEO_SOURCE_REL: str = "data/input_videos/source_002.mp4" # Or use 0 for webcam
+VIDEO_SOURCE_REL: str = "data/input_videos/source_000.mp4" # Or use 0 for webcam
 DB_NAME: str = "nurvek_detections.db"
 CAMERA_ID: str = "CAM_DEV_01" # Default camera ID for this instance
 
@@ -19,7 +19,7 @@ API_INTERNAL_BACKEND_STATUS_UPDATE_URL: str = "http://localhost:1242/api/v1/inte
 VEHICLE_DETECTION_CONF_THRESHOLD: float = 0.7 # Confidence threshold for main vehicle detection
 LP_OCR_COOLDOWN_FRAMES: int = 1
 LP_CONFIDENCE_THRESHOLD: float = 0.65 # Min confidence for LP detection model
-VALID_LP_LENGTHS: list[int] = [6, 7, 8]
+VALID_LP_LENGTHS: list[int] = [3, 7, 8]
 EASYOCR_LANGUAGES: list[str] = ['en']
 EASYOCR_ALLOWLIST: str = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'
 PRE_INFERENCE_RESIZE_WIDTH: int = 1280 # Resize input frame to this width for vehicle detection; 0 to disable

@@ -47,6 +47,24 @@ async def startup_event():
         # Depending on severity, you might want to prevent app startup or handle gracefully
         # For now, endpoints relying on Qdrant will fail if this doesn't succeed.
 
+@app.on_event("shutdown")
+async def shutdown_event():
+    print("[API_SERVER] Shutting down API server...")
+    if qdrant_sync_client:
+        try:
+            print("[API_SERVER] Closing Qdrant client...")
+            qdrant_sync_client.close()
+            print("[API_SERVER] Qdrant client closed.")
+        except Exception as e:
+            print(f"[API_SERVER_ERROR] Error closing Qdrant client: {e}")
+    
+    # Clear SSE client queues explicitly, though Starlette should handle disconnects
+    print("[API_SERVER] Clearing SSE client queues...")
+    backend_status_client_queues.clear()
+    # ocr_stream_client_queues.clear() # This queue was removed
+    print("[API_SERVER] SSE client queues cleared.")
+    print("[API_SERVER] Shutdown complete.")
+
 # --- CORS Middleware Setup ---
 origins = [
     "http://localhost:1242", # Default for local dev
